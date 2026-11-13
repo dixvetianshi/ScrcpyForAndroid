@@ -47,6 +47,10 @@
 
 ## 下载
 
+**本分支 APK**：[预览版发布页](https://github.com/dixvetianshi/ScrcpyForAndroid/releases/tag/v0.7.3_pre1-displayresize) · [直接下载 ARM 通用 APK](https://github.com/dixvetianshi/ScrcpyForAndroid/releases/download/v0.7.3_pre1-displayresize/Scrcpy-Display-Resize.apk)
+
+应用名称为“Scrcpy 主屏适配”，支持 Android 8 及以上、ARM32/ARM64，可与原版并存。发布说明包含文件校验值和验证范围，尚未进行真机运行验证。
+
 \> [上游 releases](https://github.com/Miuzarte/ScrcpyForAndroid/releases)
 
 此链接提供上游发布版。要使用本分支新增的“临时调整手机主屏分辨率”开关，请使用本分支构建的 APK。

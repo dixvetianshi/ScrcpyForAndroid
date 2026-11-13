@@ -2,6 +2,7 @@ package io.github.miuzarte.scrcpyforandroid.services
 
 import io.github.miuzarte.scrcpyforandroid.nativecore.NativeAdbService
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 
 data class ConnectedDeviceInfo(
@@ -37,11 +38,14 @@ internal suspend fun fetchConnectedDeviceInfo(
             command("getprop ro.build.version.release")
             command("getprop ro.build.version.sdk")
         }
-    }.getOrDefault(emptyList())
+    }.getOrElse { error ->
+        if (error is CancellationException) throw error
+        emptyList()
+    }
 
     ConnectedDeviceInfo(
         model = values.getOrNull(0).orEmpty().trim().ifBlank { "$host:$port" },
-        serial = values.getOrNull(1).orEmpty().trim(),
+        serial = parseConnectedDeviceSerial(values.getOrNull(1).orEmpty()).orEmpty(),
         manufacturer = values.getOrNull(2).orEmpty().trim(),
         brand = values.getOrNull(3).orEmpty().trim(),
         device = values.getOrNull(4).orEmpty().trim(),
@@ -49,3 +53,11 @@ internal suspend fun fetchConnectedDeviceInfo(
         sdkInt = values.getOrNull(6).orEmpty().trim().toIntOrNull() ?: -1,
     )
 }
+
+/** The property producer owns serial normalization for inventory and restore identity. */
+internal fun parseConnectedDeviceSerial(source: String): String? =
+    source.trim().takeIf { it.isNotEmpty() && it != "unknown" }
+
+internal suspend fun readConnectedDeviceSerial(
+    shell: suspend (String) -> String,
+): String? = parseConnectedDeviceSerial(shell("getprop ro.serialno"))

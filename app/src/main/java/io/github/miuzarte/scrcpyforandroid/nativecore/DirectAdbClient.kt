@@ -841,7 +841,7 @@ internal class DirectAdbConnection(
      * - Sends an A_OPEN message and waits for remote acknowledgment. The returned
      *   stream exposes blocking InputStream/OutputStream wrappers usable by callers.
      */
-    fun openStream(service: String): AdbSocketStream {
+    fun openStream(service: String, timeoutMs: Long = 15_000L): AdbSocketStream {
         val localId = nextLocalId.getAndIncrement()
         val flowControlWindow = Storage.appSettings.bundleState.value.adbFlowControlWindow
         val stream = AdbSocketStream(
@@ -852,10 +852,11 @@ internal class DirectAdbConnection(
             flowControlWindow,
         )
         streams[localId] = stream
-        sendMsg(A_OPEN, localId, 0, (service + "\u0000").toByteArray(Charsets.UTF_8))
         try {
-            stream.awaitOpen(15_000)
+            sendMsg(A_OPEN, localId, 0, (service + "\u0000").toByteArray(Charsets.UTF_8))
+            stream.awaitOpen(timeoutMs)
         } catch (e: Exception) {
+            stream.close()
             streams.remove(localId)
             throw e
         }
@@ -1030,7 +1031,12 @@ internal class DirectAdbConnection(
             while (!closed) {
                 val msg = recvMsg()
                 when (msg.command) {
-                    A_OKAY -> streams[msg.arg1]?.onRemoteOkay(msg.arg0)
+                    A_OKAY -> {
+                        val stream = streams[msg.arg1]
+                        if (stream != null) stream.onRemoteOkay(msg.arg0)
+                        // The open may have timed out before its acknowledgment arrived.
+                        else sendMsg(A_CLSE, msg.arg1, msg.arg0)
+                    }
                     A_WRTE -> {
                         val s = streams[msg.arg1]
                         if (s != null) {
@@ -1217,6 +1223,10 @@ class AdbSocketStream(
     val outputStream: OutputStream = OutStream()
 
     internal fun onRemoteOkay(remote: Int) {
+        if (closed) {
+            sender(A_CLSE, localId, remote, ByteArray(0))
+            return
+        }
         if (remoteId == 0) {
             remoteId = remote
             latchOk.set(true)
@@ -1260,6 +1270,7 @@ class AdbSocketStream(
             sender(A_CLSE, localId, remoteId, ByteArray(0))
         }
         queue.offer(EndOfStreamMarker)
+        latch.countDown()
         if (flowControlWindow > 0) {
             synchronized(writeLock) { writeLock.notifyAll() }
         }

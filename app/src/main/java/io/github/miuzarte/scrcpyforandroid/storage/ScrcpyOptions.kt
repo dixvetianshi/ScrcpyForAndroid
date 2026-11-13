@@ -255,6 +255,14 @@ class ScrcpyOptions(context: Context): Settings(context, "ScrcpyOptions") {
             stringPreferencesKey("new_display"),
             "",
         )
+        val RESIZE_MAIN_DISPLAY = Pair(
+            booleanPreferencesKey("resize_main_display"),
+            false,
+        )
+        val MAIN_DISPLAY_SIZE = Pair(
+            stringPreferencesKey("main_display_size"),
+            "",
+        )
         val START_APP = Pair(
             stringPreferencesKey("start_app"),
             "",
@@ -352,6 +360,8 @@ class ScrcpyOptions(context: Context): Settings(context, "ScrcpyOptions") {
             list = LIST.defaultValue,
             audioDup = AUDIO_DUP.defaultValue,
             newDisplay = NEW_DISPLAY.defaultValue,
+            resizeMainDisplay = RESIZE_MAIN_DISPLAY.defaultValue,
+            mainDisplaySize = MAIN_DISPLAY_SIZE.defaultValue,
             startApp = START_APP.defaultValue,
             startAppCustom = START_APP_CUSTOM.defaultValue,
             startAppUseCustom = START_APP_USE_CUSTOM.defaultValue,
@@ -425,6 +435,8 @@ class ScrcpyOptions(context: Context): Settings(context, "ScrcpyOptions") {
         val list: String,
         val audioDup: Boolean,
         val newDisplay: String,
+        val resizeMainDisplay: Boolean,
+        val mainDisplaySize: String,
         val startApp: String,
         val startAppCustom: String,
         val startAppUseCustom: Boolean,
@@ -496,6 +508,8 @@ class ScrcpyOptions(context: Context): Settings(context, "ScrcpyOptions") {
         bundleField(LIST) { it.list },
         bundleField(AUDIO_DUP) { it.audioDup },
         bundleField(NEW_DISPLAY) { it.newDisplay },
+        bundleField(RESIZE_MAIN_DISPLAY) { it.resizeMainDisplay },
+        bundleField(MAIN_DISPLAY_SIZE) { it.mainDisplaySize },
         bundleField(START_APP) { it.startApp },
         bundleField(START_APP_CUSTOM) { it.startAppCustom },
         bundleField(START_APP_USE_CUSTOM) { it.startAppUseCustom },
@@ -569,6 +583,8 @@ class ScrcpyOptions(context: Context): Settings(context, "ScrcpyOptions") {
         list = preferences.read(LIST),
         audioDup = preferences.read(AUDIO_DUP),
         newDisplay = preferences.read(NEW_DISPLAY),
+        resizeMainDisplay = preferences.read(RESIZE_MAIN_DISPLAY),
+        mainDisplaySize = preferences.read(MAIN_DISPLAY_SIZE),
         startApp = preferences.read(START_APP),
         startAppCustom = preferences.read(START_APP_CUSTOM),
         startAppUseCustom = preferences.read(START_APP_USE_CUSTOM),
@@ -656,6 +672,8 @@ class ScrcpyOptions(context: Context): Settings(context, "ScrcpyOptions") {
         list = ListOptions.fromString(bundle.list),
         audioDup = bundle.audioDup,
         newDisplay = bundle.newDisplay,
+        resizeMainDisplay = bundle.resizeMainDisplay,
+        mainDisplaySize = bundle.mainDisplaySize,
         startApp = if (!bundle.startAppUseCustom) bundle.startApp else bundle.startAppCustom,
         vdDestroyContent = bundle.vdDestroyContent,
         vdSystemDecorations = bundle.vdSystemDecorations,
@@ -727,6 +745,8 @@ internal fun encodeBundleToJson(bundle: ScrcpyOptions.Bundle): JSONObject =
         .put("list", bundle.list)
         .put("audioDup", bundle.audioDup)
         .put("newDisplay", bundle.newDisplay)
+        .put("resizeMainDisplay", bundle.resizeMainDisplay)
+        .put("mainDisplaySize", bundle.mainDisplaySize)
         .put("startApp", bundle.startApp)
         .put("startAppCustom", bundle.startAppCustom)
         .put("startAppUseCustom", bundle.startAppUseCustom)
@@ -975,6 +995,14 @@ internal fun decodeBundleFromJson(bundleJson: JSONObject?): ScrcpyOptions.Bundle
         newDisplay = json.optStringOrDefault(
             "newDisplay",
             ScrcpyOptions.NEW_DISPLAY.defaultValue,
+        ),
+        resizeMainDisplay = json.optBooleanOrDefault(
+            "resizeMainDisplay",
+            ScrcpyOptions.RESIZE_MAIN_DISPLAY.defaultValue,
+        ),
+        mainDisplaySize = json.optStringOrDefault(
+            "mainDisplaySize",
+            ScrcpyOptions.MAIN_DISPLAY_SIZE.defaultValue,
         ),
         startApp = json.optStringOrDefault(
             "startApp",

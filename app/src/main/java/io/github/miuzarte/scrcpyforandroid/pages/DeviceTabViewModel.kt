@@ -475,6 +475,8 @@ internal class DeviceTabViewModel(
                 block()
             } catch (_: TimeoutCancellationException) {
                 logEvent(R.string.vm_label_timeout, label, level = Log.WARN)
+            } catch (_: CancellationException) {
+                logEvent(R.string.vm_label_cancelled, label, level = Log.INFO)
             } catch (e: IllegalArgumentException) {
                 val detail = e.message?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName
                 logEvent(R.string.vm_label_param_error, label, detail, level = Log.WARN, error = e)

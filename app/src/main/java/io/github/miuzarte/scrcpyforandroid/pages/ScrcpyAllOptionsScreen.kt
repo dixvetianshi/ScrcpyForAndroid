@@ -35,6 +35,7 @@ import io.github.miuzarte.scrcpyforandroid.scaffolds.*
 import io.github.miuzarte.scrcpyforandroid.scrcpy.ClientOptions
 import io.github.miuzarte.scrcpyforandroid.scrcpy.Scrcpy
 import io.github.miuzarte.scrcpyforandroid.scrcpy.Shared.*
+import io.github.miuzarte.scrcpyforandroid.scrcpy.display.DisplaySize
 import io.github.miuzarte.scrcpyforandroid.services.AppRuntime
 import io.github.miuzarte.scrcpyforandroid.storage.ScrcpyOptions
 import io.github.miuzarte.scrcpyforandroid.storage.ScrcpyProfiles
@@ -92,6 +93,11 @@ internal fun ScrcpyAllOptionsScreen(
     val lastValidSoBundleState = rememberSaveable(selectedProfileId) {
         mutableStateOf(soBundleState.value)
     }
+    val optionDraftsState = remember { mutableStateOf<OptionDraftSnapshot?>(null) }
+    val saveScope = remember { CoroutineScope(Dispatchers.IO + SupervisorJob()) }
+    val selectedProfileIdLatest by rememberUpdatedState(selectedProfileId)
+    val soBundleLatest by rememberUpdatedState(soBundleState.value)
+    val optionDraftsLatest by rememberUpdatedState(optionDraftsState.value)
     val profileTabs = remember(scrcpyProfilesState.profiles) {
         scrcpyProfilesState.profiles.map { it.name }
     }
@@ -128,6 +134,49 @@ internal fun ScrcpyAllOptionsScreen(
             scrcpyOptions.saveBundle(bundle)
         else
             scrcpyProfiles.updateBundle(profileId, bundle)
+    }
+
+    fun prepareProfileDrafts(
+        profileId: String,
+        bundle: ScrcpyOptions.Bundle,
+        drafts: OptionDraftSnapshot?,
+    ): ScrcpyOptions.Bundle {
+        val result = commitOptionDrafts(profileId, bundle, drafts)
+        if (result.mainDisplaySizeRejected) {
+            AppRuntime.snackbar(R.string.scrcpyopt_main_display_size_not_saved)
+        }
+        return try {
+            scrcpyOptions.toClientOptions(result.bundle).fix().validate()
+            result.bundle
+        } catch (error: IllegalArgumentException) {
+            AppRuntime.snackbar(
+                R.string.scrcpyopt_invalid_options,
+                error.message ?: error.javaClass.simpleName,
+            )
+            bundle
+        }
+    }
+
+    suspend fun saveCurrentProfileDrafts(): ScrcpyOptions.Bundle {
+        val profileId = selectedProfileId
+        val bundle = prepareProfileDrafts(profileId, soBundleState.value, optionDraftsState.value)
+        soBundleState.value = bundle
+        saveBundleForProfile(profileId, bundle)
+        return bundle
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            val profileId = selectedProfileIdLatest
+            val bundle = prepareProfileDrafts(profileId, soBundleLatest, optionDraftsLatest)
+            saveScope.launch {
+                try {
+                    saveBundleForProfile(profileId, bundle)
+                } finally {
+                    saveScope.cancel()
+                }
+            }
+        }
     }
 
     suspend fun rebindDeletedProfileReferences(profileId: String) {
@@ -213,7 +262,7 @@ internal fun ScrcpyAllOptionsScreen(
                                 if (nextProfileId == selectedProfileId) return@TabRow
                                 haptic.contextClick()
                                 scope.launch {
-                                    saveBundleForProfile(selectedProfileId, soBundleState.value)
+                                    saveCurrentProfileDrafts()
                                     bindCurrentConnectedDevice(nextProfileId)
                                     AppRuntime.currentConnectionProfileId.value = nextProfileId
                                     selectedProfileId = nextProfileId
@@ -246,17 +295,20 @@ internal fun ScrcpyAllOptionsScreen(
                 if (blurActive) Modifier.layerBackdrop(blurBackdrop)
                 else Modifier,
         ) {
-            ScrcpyAllOptionsPage(
-                contentPadding = contentPadding,
-                scrollBehavior = scrollBehavior,
-                scrcpy = scrcpy,
-                soBundleShared = soBundleShared,
-                scrcpyProfilesState = scrcpyProfilesState,
-                selectedProfileIdState = selectedProfileIdState,
-                soBundleState = soBundleState,
-                lastValidSoBundleState = lastValidSoBundleState,
-                onSaveBundleForProfile = ::saveBundleForProfile,
-            )
+            key(selectedProfileId) {
+                ScrcpyAllOptionsPage(
+                    contentPadding = contentPadding,
+                    scrollBehavior = scrollBehavior,
+                    scrcpy = scrcpy,
+                    soBundleShared = soBundleShared,
+                    scrcpyProfilesState = scrcpyProfilesState,
+                    selectedProfileId = selectedProfileId,
+                    soBundleState = soBundleState,
+                    lastValidSoBundleState = lastValidSoBundleState,
+                    onSaveBundleForProfile = ::saveBundleForProfile,
+                    onDraftsChanged = { optionDraftsState.value = it },
+                )
+            }
         }
 
         ProfileNameDialog(
@@ -272,10 +324,11 @@ internal fun ScrcpyAllOptionsScreen(
             scope.launch {
                 when (activeProfileDialog) {
                     ProfileDialogMode.Create -> {
-                        saveBundleForProfile(selectedProfileId, soBundleState.value)
+                        val currentProfileId = selectedProfileId
+                        val currentBundle = saveCurrentProfileDrafts()
                         val copySourceBundle = when (copySourceProfileId) {
                             null -> ScrcpyOptions.defaultBundle()
-                            selectedProfileId -> soBundleState.value
+                            currentProfileId -> currentBundle
                             ScrcpyOptions.GLOBAL_PROFILE_ID -> soBundleShared
                             else -> scrcpyProfilesState.profiles
                                 .firstOrNull { it.id == copySourceProfileId }
@@ -293,6 +346,7 @@ internal fun ScrcpyAllOptionsScreen(
 
                     ProfileDialogMode.Rename -> {
                         val profileId = profileDialogTargetId ?: return@launch
+                        saveCurrentProfileDrafts()
                         scrcpyProfiles.renameProfile(
                             id = profileId,
                             requestedName = input,
@@ -331,6 +385,7 @@ internal fun ScrcpyAllOptionsScreen(
             },
             onMoveProfile = { fromIndex, toIndex ->
                 scope.launch {
+                    saveCurrentProfileDrafts()
                     scrcpyProfiles.moveProfile(fromIndex, toIndex)
                 }
             },
@@ -345,6 +400,7 @@ internal fun ScrcpyAllOptionsScreen(
         ) {
             scope.launch {
                 val profileId = deletingProfileId ?: return@launch
+                if (profileId != selectedProfileId) saveCurrentProfileDrafts()
                 val deleted = scrcpyProfiles.deleteProfile(profileId)
                 if (deleted) {
                     rebindDeletedProfileReferences(profileId)
@@ -366,24 +422,21 @@ internal fun ScrcpyAllOptionsPage(
     scrcpy: Scrcpy,
     soBundleShared: ScrcpyOptions.Bundle,
     scrcpyProfilesState: ScrcpyProfiles.State,
-    selectedProfileIdState: MutableState<String>,
+    selectedProfileId: String,
     soBundleState: MutableState<ScrcpyOptions.Bundle>,
     lastValidSoBundleState: MutableState<ScrcpyOptions.Bundle>,
     onSaveBundleForProfile: suspend (String, ScrcpyOptions.Bundle) -> Unit,
+    onDraftsChanged: (OptionDraftSnapshot) -> Unit,
 ) {
     val focusManager = LocalFocusManager.current
     val resources = LocalResources.current
     val scope = rememberCoroutineScope()
-    val taskScope = remember { CoroutineScope(Dispatchers.IO + SupervisorJob()) }
 
     val refreshBusy by scrcpy.listings.refreshBusyState.collectAsState()
     val listRefreshVersion by scrcpy.listings.refreshVersionState.collectAsState()
 
-    var selectedProfileId by selectedProfileIdState
-    val selectedProfileIdLatest by rememberUpdatedState(selectedProfileId)
     var soBundle by soBundleState
     var lastValidSoBundle by lastValidSoBundleState
-    val soBundleLatest by rememberUpdatedState(soBundle)
     fun resolveProfileBundle(profileId: String): ScrcpyOptions.Bundle {
         if (profileId == ScrcpyOptions.GLOBAL_PROFILE_ID) return soBundleShared
         return scrcpyProfilesState.profiles.firstOrNull { it.id == profileId }?.bundle
@@ -397,12 +450,13 @@ internal fun ScrcpyAllOptionsPage(
         }
         lastValidSoBundle = bundle
     }
-    LaunchedEffect(soBundle) {
+    LaunchedEffect(selectedProfileId, soBundle) {
+        val profileId = selectedProfileId
+        val bundle = soBundle
         delay(Settings.BUNDLE_SAVE_DELAY)
-        val currentProfileId = selectedProfileIdLatest
-        val savedBundle = resolveProfileBundle(currentProfileId)
-        if (soBundle != savedBundle) {
-            onSaveBundleForProfile(currentProfileId, soBundle)
+        val savedBundle = resolveProfileBundle(profileId)
+        if (bundle != savedBundle) {
+            onSaveBundleForProfile(profileId, bundle)
         }
     }
     val listState = rememberSaveable(
@@ -747,6 +801,28 @@ internal fun ScrcpyAllOptionsPage(
         mutableStateOf(soBundle.startAppCustom)
     }
 
+    val mainDisplaySize = remember(soBundle.mainDisplaySize) {
+        DisplaySize.parse(soBundle.mainDisplaySize)
+    }
+    var mainDisplayWidthInput by rememberSaveable(soBundle.mainDisplaySize) {
+        mutableStateOf(mainDisplaySize?.width?.toString() ?: soBundle.mainDisplaySize)
+    }
+    var mainDisplayHeightInput by rememberSaveable(soBundle.mainDisplaySize) {
+        mutableStateOf(mainDisplaySize?.height?.toString().orEmpty())
+    }
+    val mainDisplaySizeDraft = remember(mainDisplayWidthInput, mainDisplayHeightInput) {
+        mainDisplaySizeFromInputs(mainDisplayWidthInput, mainDisplayHeightInput)
+    }
+    val commitMainDisplaySize: () -> Unit = {
+        mainDisplaySizeDraft?.let { value ->
+            if (value != soBundle.mainDisplaySize) {
+                soBundle = soBundle.copy(mainDisplaySize = value)
+            }
+        }
+    }
+    val canResizeMainDisplay = soBundle.video && soBundle.newDisplay.isBlank() &&
+            (soBundle.displayId == -1 || soBundle.displayId == 0)
+
     // [<width>x<height>][/<dpi>]
     val (ndWidth, ndHeight, ndDpi) = remember(soBundle.newDisplay) {
         NewDisplay.parseFrom(soBundle.newDisplay)
@@ -787,28 +863,30 @@ internal fun ScrcpyAllOptionsPage(
     var cropYInput by rememberSaveable(soBundle.crop) {
         mutableStateOf(cY?.toString() ?: "")
     }
-    val draftSnapshotState = rememberUpdatedState(
-        OptionDraftSnapshot(
-            videoSource = soBundle.videoSource,
-            cameraSizeCustom = cameraSizeCustomInput,
-            cameraSizeUseCustom = soBundle.cameraSizeUseCustom,
-            cameraSizes = cameraSizes,
-            cameraAr = cameraArInput,
-            cameraZoom = cameraZoomInput,
-            videoCodecOptions = videoCodecOptionsInput,
-            audioCodecOptions = audioCodecOptionsInput,
-            startAppCustom = startAppCustomInput,
-            startAppUseCustom = soBundle.startAppUseCustom,
-            appPackages = apps.map { it.packageName },
-            newDisplayWidth = newDisplayWidthInput,
-            newDisplayHeight = newDisplayHeightInput,
-            newDisplayDpi = newDisplayDpiInput,
-            cropWidth = cropWidthInput,
-            cropHeight = cropHeightInput,
-            cropX = cropXInput,
-            cropY = cropYInput,
-        ),
+    val draftSnapshot = OptionDraftSnapshot(
+        profileId = selectedProfileId,
+        videoSource = soBundle.videoSource,
+        cameraSizeCustom = cameraSizeCustomInput,
+        cameraSizeUseCustom = soBundle.cameraSizeUseCustom,
+        cameraSizes = cameraSizes,
+        cameraAr = cameraArInput,
+        cameraZoom = cameraZoomInput,
+        videoCodecOptions = videoCodecOptionsInput,
+        audioCodecOptions = audioCodecOptionsInput,
+        startAppCustom = startAppCustomInput,
+        startAppUseCustom = soBundle.startAppUseCustom,
+        appPackages = apps.map { it.packageName },
+        mainDisplayWidth = mainDisplayWidthInput,
+        mainDisplayHeight = mainDisplayHeightInput,
+        newDisplayWidth = newDisplayWidthInput,
+        newDisplayHeight = newDisplayHeightInput,
+        newDisplayDpi = newDisplayDpiInput,
+        cropWidth = cropWidthInput,
+        cropHeight = cropHeightInput,
+        cropX = cropXInput,
+        cropY = cropYInput,
     )
+    SideEffect { onDraftsChanged(draftSnapshot) }
 
     val logLevelItems = rememberSaveable { LogLevel.entries.map { it.string } }
     val logLevelIndex = rememberSaveable(soBundle.logLevel) {
@@ -1910,6 +1988,108 @@ internal fun ScrcpyAllOptionsPage(
                     modifier = Modifier.padding(vertical = UiSpacing.Large),
                     verticalArrangement = Arrangement.spacedBy(UiSpacing.ContentVertical),
                 ) {
+                    SwitchPreference(
+                        title = stringResource(R.string.scrcpyopt_resize_main_display),
+                        summary = stringResource(
+                            if (canResizeMainDisplay || soBundle.resizeMainDisplay)
+                                R.string.scrcpyopt_resize_main_display_desc
+                            else R.string.scrcpyopt_resize_main_display_unavailable,
+                        ),
+                        checked = soBundle.resizeMainDisplay,
+                        onCheckedChange = {
+                            soBundle = soBundle.copy(resizeMainDisplay = it)
+                        },
+                        enabled = soBundle.resizeMainDisplay || canResizeMainDisplay,
+                    )
+                    AnimatedVisibility(soBundle.resizeMainDisplay || soBundle.mainDisplaySize.isNotEmpty()) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = UiSpacing.Large),
+                            verticalArrangement = Arrangement.spacedBy(UiSpacing.ContentVertical),
+                        ) {
+                            Text(
+                                text = stringResource(R.string.scrcpyopt_main_display_size_desc),
+                                color = colorScheme.onSurfaceVariantSummary,
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(UiSpacing.ContentHorizontal),
+                            ) {
+                                SuperTextField(
+                                    label = stringResource(R.string.scrcpyopt_main_display_width),
+                                    value = mainDisplayWidthInput,
+                                    onValueChange = { mainDisplayWidthInput = it },
+                                    onFocusLost = commitMainDisplaySize,
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = KeyboardType.Number,
+                                        imeAction = ImeAction.Next,
+                                    ),
+                                    keyboardActions = KeyboardActions(
+                                        onNext = { focusManager.moveFocus(FocusDirection.Next) },
+                                    ),
+                                    modifier = Modifier.weight(1f),
+                                )
+                                SuperTextField(
+                                    label = stringResource(R.string.scrcpyopt_main_display_height),
+                                    value = mainDisplayHeightInput,
+                                    onValueChange = { mainDisplayHeightInput = it },
+                                    onFocusLost = commitMainDisplaySize,
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = KeyboardType.Number,
+                                        imeAction = ImeAction.Done,
+                                    ),
+                                    keyboardActions = KeyboardActions(
+                                        onDone = { focusManager.clearFocus() },
+                                    ),
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                            if (mainDisplaySizeDraft == null) {
+                                Text(
+                                    text = stringResource(R.string.scrcpyopt_main_display_size_invalid),
+                                    color = colorScheme.onSurfaceVariantSummary,
+                                )
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(UiSpacing.ContentHorizontal),
+                            ) {
+                                TextButton(
+                                    text = stringResource(R.string.text_auto),
+                                    onClick = {
+                                        mainDisplayWidthInput = ""
+                                        mainDisplayHeightInput = ""
+                                        soBundle = soBundle.copy(mainDisplaySize = "")
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                )
+                                TextButton(
+                                    text = stringResource(R.string.scrcpyopt_main_display_use_native),
+                                    onClick = {
+                                        val metrics = resources.displayMetrics
+                                        mainDisplayWidthInput = metrics.widthPixels.toString()
+                                        mainDisplayHeightInput = metrics.heightPixels.toString()
+                                        soBundle = soBundle.copy(
+                                            mainDisplaySize = "${metrics.widthPixels}x${metrics.heightPixels}",
+                                        )
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (soBundle.videoSource == "display") item {
+            Card {
+                Column(
+                    modifier = Modifier.padding(vertical = UiSpacing.Large),
+                    verticalArrangement = Arrangement.spacedBy(UiSpacing.ContentVertical),
+                ) {
                     Column(
                         modifier = Modifier.padding(horizontal = UiSpacing.Large),
                         verticalArrangement = Arrangement.spacedBy(UiSpacing.Medium),
@@ -2198,89 +2378,6 @@ internal fun ScrcpyAllOptionsPage(
 
     }
 
-    DisposableEffect(Unit) {
-        onDispose {
-            taskScope.launch {
-                onSaveBundleForProfile(
-                    selectedProfileIdLatest,
-                    soBundleLatest.commitDrafts(draftSnapshotState.value),
-                )
-            }
-        }
-    }
-}
-
-private data class OptionDraftSnapshot(
-    val videoSource: String,
-    val cameraSizeCustom: String,
-    val cameraSizeUseCustom: Boolean,
-    val cameraSizes: List<String>,
-    val cameraAr: String,
-    val cameraZoom: String,
-    val videoCodecOptions: String,
-    val audioCodecOptions: String,
-    val startAppCustom: String,
-    val startAppUseCustom: Boolean,
-    val appPackages: List<String>,
-    val newDisplayWidth: String,
-    val newDisplayHeight: String,
-    val newDisplayDpi: String,
-    val cropWidth: String,
-    val cropHeight: String,
-    val cropX: String,
-    val cropY: String,
-)
-
-private fun ScrcpyOptions.Bundle.commitDrafts(
-    snapshot: OptionDraftSnapshot,
-): ScrcpyOptions.Bundle {
-    var next = this
-    if (snapshot.videoSource == "camera") {
-        if (snapshot.cameraSizeUseCustom) {
-            next = if (snapshot.cameraSizeCustom in snapshot.cameraSizes) {
-                next.copy(
-                    cameraSize = snapshot.cameraSizeCustom,
-                    cameraSizeUseCustom = false,
-                )
-            } else {
-                next.copy(cameraSizeCustom = snapshot.cameraSizeCustom)
-            }
-        }
-        next = next.copy(
-            cameraAr = snapshot.cameraAr,
-            cameraZoom = snapshot.cameraZoom,
-        )
-    }
-    next = next.copy(
-        videoCodecOptions = snapshot.videoCodecOptions,
-        audioCodecOptions = snapshot.audioCodecOptions,
-    )
-    if (snapshot.startAppUseCustom) {
-        next = if (snapshot.startAppCustom in snapshot.appPackages) {
-            next.copy(
-                startApp = snapshot.startAppCustom,
-                startAppUseCustom = false,
-            )
-        } else {
-            next.copy(startAppCustom = snapshot.startAppCustom)
-        }
-    }
-    if (snapshot.videoSource == "display") {
-        next = next.copy(
-            newDisplay = NewDisplay.parseFrom(
-                snapshot.newDisplayWidth,
-                snapshot.newDisplayHeight,
-                snapshot.newDisplayDpi,
-            ).toString(),
-            crop = Crop.parseFrom(
-                snapshot.cropWidth,
-                snapshot.cropHeight,
-                snapshot.cropX,
-                snapshot.cropY,
-            ).toString(),
-        )
-    }
-    return next
 }
 
 private enum class ProfileDialogMode {

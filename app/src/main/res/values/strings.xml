@@ -570,6 +570,19 @@
     <string name="scrcpyopt_ignore_video_encoder_constraints">Ignore video encoder constraints</string>
     <string name="scrcpyopt_start_app">Open app after scrcpy starts</string>
     <string name="scrcpyopt_native">Native</string>
+    <string name="main_display_resize_identity_unavailable">Cannot identify this phone; its screen size was not changed.</string>
+    <string name="main_display_resize_failed">Could not resize the phone screen: %1$s</string>
+    <string name="main_display_resize_restore_pending">The phone’s screen restore is pending. Reconnect this phone to retry.</string>
+    <string name="main_display_resize_restored">The phone’s previous screen size has been restored.</string>
+    <string name="scrcpyopt_resize_main_display">Temporarily resize the phone screen</string>
+    <string name="scrcpyopt_resize_main_display_desc">Match the screen before streaming and restore the previous size when the session ends</string>
+    <string name="scrcpyopt_main_display_size_desc">Leave both fields empty to match this device’s screen. You can also enter a custom pixel size.</string>
+    <string name="scrcpyopt_main_display_width">Width (px)</string>
+    <string name="scrcpyopt_main_display_height">Height (px)</string>
+    <string name="scrcpyopt_main_display_use_native">Use this device’s size</string>
+    <string name="scrcpyopt_main_display_size_invalid">Enter a positive width and height, or clear both fields for automatic sizing</string>
+    <string name="scrcpyopt_main_display_size_not_saved">Invalid screen size was not saved; the previous setting was kept.</string>
+    <string name="scrcpyopt_resize_main_display_unavailable">Enable display video and select the main screen. Virtual displays cannot use this setting.</string>
     <string name="scrcpyopt_log_level">Log level</string>
 
     <!-- DeviceTabViewModel snackbar & log messages -->

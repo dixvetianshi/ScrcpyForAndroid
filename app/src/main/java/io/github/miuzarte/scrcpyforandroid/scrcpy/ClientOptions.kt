@@ -1,6 +1,7 @@
 package io.github.miuzarte.scrcpyforandroid.scrcpy
 
 import io.github.miuzarte.scrcpyforandroid.scrcpy.Shared.*
+import io.github.miuzarte.scrcpyforandroid.scrcpy.display.DisplaySize
 import io.github.miuzarte.scrcpyforandroid.services.NativeRecordingSupport
 
 data class ClientOptions(
@@ -199,6 +200,11 @@ data class ClientOptions(
     var audioDup: Boolean = false, // to server
     // --new-display=[<width>x<height>][/<dpi>]
     var newDisplay: String = "", // to server
+
+    // Client-side main display override, restored when this session ends.
+    var resizeMainDisplay: Boolean = false,
+    // Empty uses this client's screen size; otherwise positive width x height.
+    var mainDisplaySize: String = "",
     // --start-app
     var startApp: String = "",
 
@@ -323,6 +329,21 @@ data class ClientOptions(
                 throw IllegalArgumentException(
                     "--new-display is incompatible with --no-video",
                 )
+            }
+        }
+
+        if (resizeMainDisplay) {
+            require(video && videoSource == VideoSource.DISPLAY) {
+                "Temporary main display resizing requires display video"
+            }
+            require(displayId == -1 || displayId == 0) {
+                "Temporary main display resizing is only available for the main display"
+            }
+            require(newDisplay.isBlank()) {
+                "Temporary main display resizing cannot be combined with --new-display"
+            }
+            require(mainDisplaySize.isEmpty() || DisplaySize.parse(mainDisplaySize) != null) {
+                "Main display size must contain a positive width and height, such as 1200x1920"
             }
         }
 

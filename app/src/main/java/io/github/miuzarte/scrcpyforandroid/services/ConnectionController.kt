@@ -145,6 +145,7 @@ internal class ConnectionController(
         }
         AppRuntime.currentConnectedDevice = info
         applyConnectedDeviceCapabilities(info.sdkInt)
+        scrcpy.recoverPendingMainDisplay()
         return ConnectedAdbResult(
             target = target,
             info = info,
@@ -174,7 +175,11 @@ internal class ConnectionController(
         stateStore.markConnectionFailed(error.message)
     }
 
-    fun markKeepAliveReconnectSuccess(host: String, port: Int) {
+    suspend fun markKeepAliveReconnectSuccess(host: String, port: Int) {
+        val info = adbCoordinator.fetchConnectedDeviceInfo(host, port)
+        AppRuntime.currentConnectedDevice = info
+        applyConnectedDeviceCapabilities(info.sdkInt)
+        scrcpy.recoverPendingMainDisplay()
         stateStore.update {
             it.copy(
                 adbSession = it.adbSession.copy(

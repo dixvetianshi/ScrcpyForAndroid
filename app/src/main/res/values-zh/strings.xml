@@ -569,6 +569,19 @@
     <string name="scrcpyopt_ignore_video_encoder_constraints">忽略视频编码器约束</string>
     <string name="scrcpyopt_start_app">scrcpy 启动后打开应用</string>
     <string name="scrcpyopt_native">本机</string>
+    <string name="main_display_resize_identity_unavailable">无法识别这台手机，未修改其屏幕分辨率。</string>
+    <string name="main_display_resize_failed">调整手机分辨率失败：%1$s</string>
+    <string name="main_display_resize_restore_pending">手机分辨率尚未恢复，重新连接这台手机后将重试。</string>
+    <string name="main_display_resize_restored">已恢复手机原来的分辨率。</string>
+    <string name="scrcpyopt_resize_main_display">临时调整手机主屏分辨率</string>
+    <string name="scrcpyopt_resize_main_display_desc">投屏前匹配屏幕大小，结束后恢复原来的分辨率设置</string>
+    <string name="scrcpyopt_main_display_size_desc">宽高留空时自动匹配本机屏幕，也可指定像素尺寸。</string>
+    <string name="scrcpyopt_main_display_width">宽度（像素）</string>
+    <string name="scrcpyopt_main_display_height">高度（像素）</string>
+    <string name="scrcpyopt_main_display_use_native">使用本机尺寸</string>
+    <string name="scrcpyopt_main_display_size_invalid">请填写正整数宽高，或清空两项以自动匹配</string>
+    <string name="scrcpyopt_main_display_size_not_saved">无效分辨率未保存，已保留原来的设置。</string>
+    <string name="scrcpyopt_resize_main_display_unavailable">请启用视频并选择主屏镜像，此设置不能与虚拟屏同时使用。</string>
     <string name="scrcpyopt_log_level">日志等级</string>
 
     <!-- DeviceTabViewModel snackbar & log messages -->

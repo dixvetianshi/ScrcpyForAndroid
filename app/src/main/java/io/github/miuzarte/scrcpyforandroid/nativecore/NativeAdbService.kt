@@ -9,6 +9,9 @@ import java.io.InputStream
 import java.io.OutputStream
 import java.net.Socket
 import java.nio.file.Path
+import java.io.ByteArrayOutputStream
+import java.io.IOException
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -270,6 +273,41 @@ object NativeAdbService {
         return response
     }
 
+    /**
+     * Borrow one immutable connection for a display-settings transaction. A
+     * target switch must never redirect an old restore to the replacement phone.
+     */
+    suspend fun bindShell(): BoundShell = BoundShell(snapshotConnection())
+
+    class BoundShell internal constructor(private val connection: DirectAdbConnection) {
+        suspend fun isCurrent(): Boolean = mutex.withLock {
+            NativeAdbService.connection === connection && connection.isAlive()
+        }
+
+        suspend fun execute(command: String): String = withTimeout(5_000L) {
+            // Both awaitOpen's latch and the stream reader's queue are interruptible.
+            runInterruptible(Dispatchers.IO) {
+                val marker = "__SCRCPY_STATUS_" + UUID.randomUUID().toString().replace("-", "")
+                val script = command +
+                    "\n__scrcpy_status=\$?\nprintf '\\n$marker=%s\\n' \"\$__scrcpy_status\""
+                connection.openStream("shell:$script", timeoutMs = 5_000L).use { stream ->
+                    val output = ByteArrayOutputStream()
+                    val buffer = ByteArray(1_024)
+                    while (true) {
+                        val count = stream.inputStream.read(buffer)
+                        if (count < 0) break
+                        if (count == 0) throw IOException("ADB shell returned an empty read")
+                        if (count > 65_536 - output.size()) {
+                            throw IOException("Display-settings shell output exceeds 64 KiB")
+                        }
+                        output.write(buffer, 0, count)
+                    }
+                    parseBoundShellResult(output.toString(Charsets.UTF_8.name()), marker)
+                }
+            }
+        }
+    }
+
     suspend fun shellBatch(build: ShellBatchBuilder.() -> Unit): List<String> {
         val builder = ShellBatchBuilder().apply(build)
         if (builder.commands.isEmpty()) {
@@ -337,7 +375,7 @@ object NativeAdbService {
     }
 
     suspend fun openShellStream(command: String): AdbSocketStream {
-        return snapshotConnection().openStream("shell:$command")
+        return openInterruptibleStream("shell:$command")
     }
 
     suspend fun ensureConnectionResponsive() {
@@ -353,11 +391,13 @@ object NativeAdbService {
     }
 
     suspend fun push(localPath: Path, remotePath: String) {
-        snapshotConnection().push(localPath.toFile().readBytes(), remotePath)
+        val conn = snapshotConnection()
+        runInterruptible(Dispatchers.IO) { conn.push(localPath.toFile().readBytes(), remotePath) }
     }
 
     suspend fun push(input: InputStream, remotePath: String, unixMode: Int = 420) {
-        snapshotConnection().push(input, remotePath, unixMode)
+        val conn = snapshotConnection()
+        runInterruptible(Dispatchers.IO) { conn.push(input, remotePath, unixMode) }
     }
 
     suspend fun pull(remotePath: String): ByteArray {
@@ -369,7 +409,22 @@ object NativeAdbService {
     }
 
     suspend fun openAbstractSocket(name: String): AdbSocketStream {
-        return snapshotConnection().openStream("localabstract:$name")
+        return openInterruptibleStream("localabstract:$name")
+    }
+
+    private suspend fun openInterruptibleStream(service: String): AdbSocketStream {
+        val conn = snapshotConnection()
+        var opened: AdbSocketStream? = null
+        try {
+            return runInterruptible(Dispatchers.IO) {
+                conn.openStream(service).also { opened = it }
+            }
+        } catch (error: Throwable) {
+            // A successful handshake can race cancellation at the IO dispatcher return.
+            // The producer still owns the stream until it is delivered to its caller.
+            opened?.close()
+            throw error
+        }
     }
 
     suspend fun close() {

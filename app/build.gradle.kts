@@ -87,6 +87,10 @@ android {
     }
 
     buildTypes {
+        debug {
+            applicationIdSuffix = ".displayresize"
+            versionNameSuffix = "-displayresize"
+        }
         release {
             signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false

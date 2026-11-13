@@ -2,6 +2,34 @@
 
 # Scrcpy for Android
 
+<a name="tablet-main-display"></a>
+
+## 本分支：手机主屏适配平板
+
+`codex/temporary-display-size` 基于 [Miuzarte/ScrcpyForAndroid](https://github.com/Miuzarte/ScrcpyForAndroid)，新增可选的临时主屏分辨率调整，适合“手机运行游戏，平板显示和操作”。功能默认关闭，启用后在投屏前保存手机原来的分辨率设置，结束会话后恢复；不修改 DPI。
+
+### 开启方式
+
+1. 在平板安装本分支构建的 **Scrcpy 主屏适配**，通过 USB 或无线 ADB 连接手机。
+2. 打开 **全部选项 → 临时调整手机主屏分辨率**。视频源需为屏幕、显示器选择默认主屏，并保持 `new-display` 为空。
+3. 宽高留空时，每次开始投屏自动使用平板尺寸；也可填写自定义像素宽高，或点击“使用本机尺寸”。
+
+尺寸会按手机的自然横竖方向映射。例如横屏平板的 1920×1200，在常见竖屏手机上对应 1200×1920。设置在下一次开始投屏时生效。
+
+这里的“自动”按钮会清空自定义宽高，选择开始投屏时自动匹配平板。原有的“自动调整尺寸以匹配界面”（`--flex-display`）配合 `new-display` 调整独立虚拟屏，跟随窗口尺寸变化。使用本分支的主屏模式时，关闭 `--flex-display`，保持 `new-display` 为空。
+
+### 恢复与验证范围
+
+- 原来有 `wm size` 覆盖值时恢复该值；没有覆盖值时恢复系统默认。原值先持久保存，再修改手机。
+- 启动失败、取消和正常结束会话都会尝试恢复。拔线或网络中断使命令无法送达时，保留待恢复记录，重新连接同一手机后先重试。
+- 通过手机串号识别恢复目标；无法确认身份时不修改分辨率。其他操作已改变手机尺寸时保留原值和当前设置，避免覆盖后续更改。
+- 已通过完整单元测试套件的 **64 项测试**，以及主应用 Kotlin/Java、ARM64/ARM32 JNI 和 Debug APK 构建；APK v2 签名验证通过。
+- 尚未做真机安装或运行验证，具体 ROM、游戏、手柄及音频延迟仍需实测。其他投屏和输入功能沿用上游实现。
+
+恢复逻辑见 [TemporaryDisplayResize.kt](app/src/main/java/io/github/miuzarte/scrcpyforandroid/scrcpy/display/TemporaryDisplayResize.kt)，相关回归见 [分辨率恢复测试](app/src/test/java/io/github/miuzarte/scrcpyforandroid/scrcpy/display/TemporaryDisplayResizeTest.kt)。
+
+本分支的 Debug 包名是 `io.github.miuzarte.scrcpyforandroid.displayresize`，版本为 `0.7.3_pre1-displayresize`，最低 Android 8，ARM 通用构建包含 32/64 位库，可与原版并存。APK 是构建输出，不提交到 Git；构建方法见[构建本分支](#构建本分支)。
+
 <a href="https://github.com/Genymobile/scrcpy/blob/master/app/data/icon.svg" title="Modified from the original version">
   <img src="app/src/main/assets/icon/icon.svg" width="128" height="128" alt="scrcpy" align="right" />
 </a>
@@ -19,7 +47,9 @@
 
 ## 下载
 
-\> [releases](https://github.com/Miuzarte/ScrcpyForAndroid/releases)
+\> [上游 releases](https://github.com/Miuzarte/ScrcpyForAndroid/releases)
+
+此链接提供上游发布版。要使用本分支新增的“临时调整手机主屏分辨率”开关，请使用本分支构建的 APK。
 
 ## 截图
 
@@ -52,6 +82,8 @@
   - 受控设备播放 `USAGE_GAME` 流时 (明日方舟 Bilibili 服) ，仍存在 100~200ms 的有感延迟
 - 带生物认证的锁屏密码自动填充 (入口位于虚拟按钮中)
 - 多配置切换，设备绑定配置，连接后直接进入全屏
+- 临时调整手机主屏分辨率（默认关闭）
+  - 用法和恢复范围见[本分支说明](#tablet-main-display)
 - 可替换 scrcpy-server
 - 利用 mDNS 服务实现自动连接启用无线调试的设备、自动发现等待配对设备的IP与端口
 - 二维码配对
@@ -136,6 +168,25 @@
 - JDK 21
 - Android SDK (`compileSdk 37` / `buildTools 37.0.0`)
 - Android NDK `30.0.16248370` (需要与 `libcxx` 一致)
+
+### 构建本分支
+
+检出 `codex/temporary-display-size` 后，在仓库目录执行：
+
+```bash
+git submodule update --init --recursive
+./gradlew :app:testDebugUnitTest :app:assembleDebug "-PabiList=arm64-v8a,armeabi-v7a" --max-workers=2
+```
+
+Windows PowerShell 使用：
+
+```powershell
+.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug "-PabiList=arm64-v8a,armeabi-v7a" --max-workers=2
+```
+
+ARM 通用 APK 输出到 `app/build/outputs/apk/debug/app-universal-debug.apk`。设置 `ANDROID_HOME` 或 `ANDROID_SDK_ROOT` 指向已安装的 SDK，确保 miuix 的 included build 也能找到 SDK。Windows 构建使用无中文路径的检出目录。
+
+### 上游构建示例
 
 ```bash
 git clone --recursive https://github.com/Miuzarte/ScrcpyForAndroid.git

@@ -373,6 +373,10 @@ object NativeCoreFacade {
         Log.i(TAG, "restartSessionWith(): starting new session with max_size=${options.maxSize}")
         runCatching { scrcpy.start(options) }
             .onFailure {
+                if (it is kotlinx.coroutines.CancellationException) {
+                    isRestarting = false
+                    throw it
+                }
                 // The new session never came up, so onScrcpySessionStarted() will not clear
                 // the flag; without this, recovery would stay disabled for good.
                 Log.e(TAG, "restartSessionWith(): restart failed", it)

@@ -171,9 +171,11 @@
 
 ### 构建本分支
 
-检出 `codex/temporary-display-size` 后，在仓库目录执行：
+先克隆本分支及其子模块，再构建 ARM 通用包：
 
 ```bash
+git clone --branch codex/temporary-display-size --recurse-submodules https://github.com/dixvetianshi/ScrcpyForAndroid.git
+cd ScrcpyForAndroid
 git submodule update --init --recursive
 ./gradlew :app:testDebugUnitTest :app:assembleDebug "-PabiList=arm64-v8a,armeabi-v7a" --max-workers=2
 ```
